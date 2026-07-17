@@ -22,6 +22,7 @@ let gatewaySocket = null;
 // Web Bluetooth contexts
 let webBleDevice = null;
 let webBleCharacteristic = null;
+let webBleNotifyCharacteristic = null;
 let bleReceiveBuffer = new Uint8Array(0);
 let webBlePollInterval = null;
 
@@ -78,7 +79,7 @@ document.addEventListener("DOMContentLoaded", () => {
     initChart();
     
     // Log application version
-    appendLogConsole("JKBMS Pro Mobil v10 başlatıldı.", "INFO");
+    appendLogConsole("JKBMS Pro Mobil v11 başlatıldı.", "INFO");
     
     // Auto start in Simulation Mode
     activateSimulation();
@@ -139,11 +140,49 @@ async function connectWebBluetooth() {
         appendLogConsole("GATT sunucusuna bağlanıldı. Servis alınıyor...", "INFO");
         
         const service = await server.getPrimaryService(0xffe0);
-        webBleCharacteristic = await service.getCharacteristic(0xffe1); // FFE1 handles write/notify
+        appendLogConsole("Servis alındı. Özellikler taranıyor...", "INFO");
+        
+        const characteristics = await service.getCharacteristics();
+        appendLogConsole(`Bulunan BLE özellik sayısı: ${characteristics.length}`, "INFO");
+        
+        let writeChar = null;
+        let notifyChar = null;
+        
+        characteristics.forEach((char, index) => {
+            const uuid = char.uuid.toLowerCase();
+            const props = [];
+            if (char.properties.read) props.push("read");
+            if (char.properties.write) props.push("write");
+            if (char.properties.writeWithoutResponse) props.push("writeWithoutResponse");
+            if (char.properties.notify) props.push("notify");
+            if (char.properties.indicate) props.push("indicate");
+            
+            appendLogConsole(`Özellik #${index}: ${uuid.substring(4, 8).toUpperCase()} [${props.join(", ")}]`, "INFO");
+            
+            if (uuid.includes("ffe1")) {
+                if (char.properties.notify) notifyChar = char;
+                if (char.properties.write || char.properties.writeWithoutResponse) writeChar = char;
+            }
+        });
+        
+        // Fallback: If we didn't find FFE1 with notify/write, use any matching characteristics
+        if (!notifyChar || !writeChar) {
+            characteristics.forEach(char => {
+                if (!notifyChar && char.properties.notify) notifyChar = char;
+                if (!writeChar && (char.properties.write || char.properties.writeWithoutResponse)) writeChar = char;
+            });
+        }
+        
+        if (!notifyChar || !writeChar) {
+            throw new Error("Gerekli okuma/yazma BLE özellikleri bulunamadı.");
+        }
+        
+        webBleCharacteristic = writeChar;
+        webBleNotifyCharacteristic = notifyChar;
         
         // Register event listener BEFORE starting notifications to prevent race conditions
-        webBleCharacteristic.addEventListener('characteristicvaluechanged', handleWebBleNotification);
-        await webBleCharacteristic.startNotifications();
+        webBleNotifyCharacteristic.addEventListener('characteristicvaluechanged', handleWebBleNotification);
+        await webBleNotifyCharacteristic.startNotifications();
         
         appendLogConsole("Bluetooth bildirimleri dinleniyor...", "INFO");
         connectionState = 'connected_webble';
@@ -153,7 +192,6 @@ async function connectWebBluetooth() {
         stopSimulation();
         
         // Send initial status query command
-        // Frame: 0x4e, 0x57, 0x00, 0x13, 0x00, 0x00, 0x00, 0x00, 0x06, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x68, 0x00, 0x00, 0x01, 0x29
         const query_cmd = new Uint8Array([
             0x4e, 0x57, 0x00, 0x13, 0x00, 0x00, 0x00, 0x00, 
             0x06, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
@@ -169,7 +207,7 @@ async function connectWebBluetooth() {
                 try {
                     await writeWebBleCharacteristic(query_cmd);
                 } catch (e) {
-                    console.warn("Error polling Web BLE:", e);
+                    appendLogConsole("Sorgu gönderme hatası: " + e.message, "ERROR");
                 }
             }
         }, 2500);
