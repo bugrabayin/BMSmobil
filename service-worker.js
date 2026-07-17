@@ -1,5 +1,5 @@
 // JKBMS Pro Service Worker for Offline Caching
-const CACHE_NAME = 'jkbms-pro-v12';
+const CACHE_NAME = 'jkbms-pro-v13';
 const ASSETS = [
   './',
   './index.html',

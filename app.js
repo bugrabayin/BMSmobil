@@ -79,7 +79,7 @@ document.addEventListener("DOMContentLoaded", () => {
     initChart();
     
     // Log application version
-    appendLogConsole("JKBMS Pro Mobil v12 başlatıldı.", "INFO");
+    appendLogConsole("JKBMS Pro Mobil v13 başlatıldı.", "INFO");
     
     // Auto start in Simulation Mode
     activateSimulation();
@@ -450,8 +450,19 @@ function decodeBleFrame(frame) {
         return null;
     }
     
+    // Auto-detect layout: check total voltage at 118 (24S) vs 150 (32S)
+    let total_voltage_24s = getUint32LE(frame, 118) * 0.001;
+    let offset = 0;
+    let is32S = false;
+    
+    if (total_voltage_24s > 150.0 || total_voltage_24s < 1.0) {
+        offset = 32;
+        is32S = true;
+    }
+    
     let cell_voltages = [];
-    for (let i = 0; i < 24; i++) {
+    const maxCells = is32S ? 32 : 24;
+    for (let i = 0; i < maxCells; i++) {
         let volt_mv = getUint16LE(frame, i * 2 + 6);
         let volt = volt_mv * 0.001;
         if (volt > 0.5 && volt < 5.0) {
@@ -459,27 +470,40 @@ function decodeBleFrame(frame) {
         }
     }
     
-    let total_voltage = getUint32LE(frame, 118) * 0.001;
-    let current = getInt32LE(frame, 126) * 0.001;
-    let temp1 = getInt16LE(frame, 130) * 0.1;
-    let temp2 = getInt16LE(frame, 132) * 0.1;
-    let mos_temp = getInt16LE(frame, 134) * 0.1;
-    let balancing_current = getInt16LE(frame, 138) * 0.001;
-    let balancing_active = (frame[140] !== 0x00);
-    let soc = frame[141];
-    let capacity_remaining = getUint32LE(frame, 142) * 0.001;
-    let full_charge_capacity = getUint32LE(frame, 146) * 0.001;
-    let cycle_count = getUint32LE(frame, 150);
+    let total_voltage = getUint32LE(frame, 118 + offset) * 0.001;
+    let current = getInt32LE(frame, 126 + offset) * 0.001;
+    let temp1 = getInt16LE(frame, 130 + offset) * 0.1;
+    let temp2 = getInt16LE(frame, 132 + offset) * 0.1;
     
-    let charging_switch = (frame[166] === 0x01);
-    let discharging_switch = (frame[167] === 0x01);
-    let balancing_switch = (frame[169] === 0x01);
+    let mos_temp;
+    let error_bitmask;
+    if (is32S) {
+        // In 32S, MOS temperature is at 112 + 32 = 144
+        mos_temp = getInt16LE(frame, 144) * 0.1;
+        // In 32S, errors is a 32-bit field at 134 + 32 = 166
+        error_bitmask = getUint32LE(frame, 166);
+    } else {
+        // In 24S, MOS temperature is at 134
+        mos_temp = getInt16LE(frame, 134) * 0.1;
+        // In 24S, errors is a 16-bit field at 136
+        error_bitmask = getUint16LE(frame, 136);
+    }
     
-    let error_bitmask = getUint16LE(frame, 136);
+    let balancing_current = getInt16LE(frame, 138 + offset) * 0.001;
+    let balancing_active = (frame[140 + offset] !== 0x00);
+    let soc = frame[141 + offset];
+    let capacity_remaining = getUint32LE(frame, 142 + offset) * 0.001;
+    let full_charge_capacity = getUint32LE(frame, 146 + offset) * 0.001;
+    let cycle_count = getUint32LE(frame, 150 + offset);
+    
+    let charging_switch = (frame[166 + offset] === 0x01);
+    let discharging_switch = (frame[167 + offset] === 0x01);
+    let balancing_switch = (frame[169 + offset] === 0x01);
+    
     let alerts = parseJSAlarms(error_bitmask);
     
     return {
-        bms_id: "JK_BLE",
+        bms_id: is32S ? "JK_BLE_32S" : "JK_BLE_24S",
         cmd_type: 0x02,
         cell_voltages: cell_voltages,
         cell_count: cell_voltages.length,
