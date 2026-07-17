@@ -78,7 +78,7 @@ document.addEventListener("DOMContentLoaded", () => {
     initChart();
     
     // Log application version
-    appendLogConsole("JKBMS Pro Mobil v9 başlatıldı.", "INFO");
+    appendLogConsole("JKBMS Pro Mobil v10 başlatıldı.", "INFO");
     
     // Auto start in Simulation Mode
     activateSimulation();
@@ -141,9 +141,9 @@ async function connectWebBluetooth() {
         const service = await server.getPrimaryService(0xffe0);
         webBleCharacteristic = await service.getCharacteristic(0xffe1); // FFE1 handles write/notify
         
-        // Start notifications
-        await webBleCharacteristic.startNotifications();
+        // Register event listener BEFORE starting notifications to prevent race conditions
         webBleCharacteristic.addEventListener('characteristicvaluechanged', handleWebBleNotification);
+        await webBleCharacteristic.startNotifications();
         
         appendLogConsole("Bluetooth bildirimleri dinleniyor...", "INFO");
         connectionState = 'connected_webble';
