@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>JKBMS Pro Mobil</title>
+    <!-- PWA Meta Tags -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#00e5ff">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="JKBMS Pro">
+    <link rel="apple-touch-icon" href="icon-192.png">
+    
+    <!-- Google Fonts: Outfit & Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Custom Style -->
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Overlay for mobile sidebar -->
+        <div class="sidebar-overlay" id="sidebar-overlay" onclick="toggleSidebar(false)"></div>
+        
+        <!-- SIDEBAR: CONNECTIONS & LOGS (Collapsible on mobile) -->
+        <aside class="sidebar" id="sidebar">
+            <div class="brand">
+                <div class="logo-icon">
+                    <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="2" y="7" width="16" height="10" rx="2" ry="2"></rect>
+                        <line x1="22" y1="11" x2="22" y2="13"></line>
+                    </svg>
+                </div>
+                <h2><span>JKBMS</span> Mobil <span style="font-size: 11px; font-weight: 500; color: var(--color-primary); background: rgba(0, 229, 255, 0.1); padding: 2px 6px; border-radius: 4px; margin-left: 8px; vertical-align: middle; border: 1px solid rgba(0, 229, 255, 0.2);">v9</span></h2>
+                <!-- Close menu button for mobile -->
+                <button class="menu-toggle-close" onclick="toggleSidebar(false)">
+                    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+            
+            <div class="sidebar-tabs">
+                <button class="tab-btn active" onclick="switchTab('simulation')">Simüle</button>
+                <button class="tab-btn" onclick="switchTab('webble')">Direct BLE</button>
+                <button class="tab-btn" onclick="switchTab('gateway')">Ağ Geçidi</button>
+            </div>
+            
+            <div class="tab-content">
+                <!-- SIMULATION TAB -->
+                <div id="tab-simulation" class="panel-content active">
+                    <div class="card-info">
+                        <h3>Simülasyon Modu</h3>
+                        <p>Telefonunuzda bataryanın şarj durumunu, sıcaklık dalgalanmalarını ve aktif dengeleme hareketlerini simüle edin.</p>
+                        <button class="btn btn-primary w-100" onclick="activateSimulation()">Simülasyonu Başlat</button>
+                    </div>
+                    
+                    <div class="card-info style-trigger">
+                        <h3>Simüle Hata Tetikle</h3>
+                        <p class="sub-text">Arayüz uyarı sistemini test edin:</p>
+                        <div class="alarm-triggers-grid">
+                            <button class="btn btn-outline-alarm" onclick="toggleMockAlarm(0, this)">Aşırı Voltaj</button>
+                            <button class="btn btn-outline-alarm" onclick="toggleMockAlarm(1, this)">Düşük Voltaj</button>
+                            <button class="btn btn-outline-alarm" onclick="toggleMockAlarm(4, this)">Şarj Yüksek Sıcaklık</button>
+                            <button class="btn btn-outline-alarm" onclick="toggleMockAlarm(8, this)">MOSFET Sıcaklık</button>
+                            <button class="btn btn-outline-alarm" onclick="toggleMockAlarm(11, this)">Kısa Devre</button>
+                            <button class="btn btn-outline-alarm" onclick="toggleMockAlarm(14, this)">Gevşek Kablo</button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- DIRECT WEB BLE TAB -->
+                <div id="tab-webble" class="panel-content">
+                    <div class="card-info">
+                        <h3>Doğrudan Tarayıcı Bluetooth</h3>
+                        <p class="sub-text">Telefonunuzun Bluetooth donanımını kullanarak JKBMS'e doğrudan bağlanın:</p>
+                        
+                        <div class="alert-info-box">
+                            💡 Android'de <strong>Chrome/Edge</strong>, iOS (iPhone) cihazlarda ise ücretsiz <strong>Bluefy</strong> tarayıcısını kullanmanız gerekir.
+                        </div>
+                        
+                        <button class="btn btn-primary w-100" onclick="connectWebBluetooth()" id="btn-connect-webble">
+                            <span class="btn-text">Cihaz Ara ve Bağlan</span>
+                        </button>
+                        
+                        <div class="connection-details-box hidden" id="webble-status-box">
+                            <div class="detail-line">Durum: <span id="webble-conn-status">Bağlı Değil</span></div>
+                            <div class="detail-line">Cihaz: <span id="webble-conn-name">--</span></div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- REMOTE GATEWAY TAB -->
+                <div id="tab-gateway" class="panel-content">
+                    <div class="card-info">
+                        <h3>Sunucu Ağ Geçidi</h3>
+                        <p class="sub-text">Bilgisayarınızda veya Raspberry Pi üzerinde çalışan Python Gateway sunucusuna bağlanın:</p>
+                        
+                        <div class="form-group">
+                            <label for="gateway-ip">Sunucu IP / Host Adresi</label>
+                            <input type="text" id="gateway-ip" class="form-control" placeholder="Örn: 192.168.1.34">
+                        </div>
+                        
+                        <button class="btn btn-primary w-100" onclick="connectToGatewayServer()">Ağ Geçidine Bağlan</button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- REAL-TIME LOGS TERMINAL -->
+            <div class="console-panel">
+                <div class="console-header">
+                    <h4>Konsol Günlüğü</h4>
+                    <button class="clear-btn" onclick="clearConsole()">Temizle</button>
+                </div>
+                <div id="console-logs" class="console-body"></div>
+            </div>
+        </aside>
+        
+        <!-- MAIN DASHBOARD CONTENT -->
+        <main class="dashboard-main">
+            <!-- HEADER -->
+            <header class="dashboard-header">
+                <div class="header-left">
+                    <!-- Mobile Hamburger Menu Button -->
+                    <button class="menu-toggle-btn" onclick="toggleSidebar(true)">
+                        <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.5">
+                            <line x1="3" y1="12" x2="21" y2="12"></line>
+                            <line x1="3" y1="6" x2="21" y2="6"></line>
+                            <line x1="3" y1="18" x2="21" y2="18"></line>
+                        </svg>
+                    </button>
+                    <div class="header-title">
+                        <h1 id="bms-model">Simülasyon Modu</h1>
+                        <p id="bms-meta">Cihaz ID: -- | Hücre Sayısı: 16S</p>
+                    </div>
+                </div>
+                <div class="status-badge-container">
+                    <span class="status-indicator status-sim" id="connection-status-badge">Simülasyon</span>
+                    <button class="btn btn-danger btn-sm hidden" id="btn-disconnect" onclick="disconnectDevice()">Kes</button>
+                </div>
+            </header>
+            
+            <!-- ALERTS NOTIFICATION BANNER -->
+            <div id="alarm-banner" class="alarm-banner hidden">
+                <div class="alarm-banner-icon">⚠️</div>
+                <div class="alarm-banner-content">
+                    <strong>Aktif Alarmlar:</strong>
+                    <span id="alarm-list-text">Hiçbir alarm yok.</span>
+                </div>
+            </div>
+            
+            <!-- TELEMETRY SUMMARY GRID -->
+            <section class="dashboard-grid">
+                <!-- circular SOC card -->
+                <div class="dashboard-card soc-card">
+                    <h3>Şarj Seviyesi (SoC)</h3>
+                    <div class="soc-radial-container">
+                        <svg class="soc-radial" viewBox="0 0 120 120">
+                            <circle class="radial-bg" cx="60" cy="60" r="50"></circle>
+                            <circle class="radial-progress" cx="60" cy="60" r="50" id="soc-circle"></circle>
+                        </svg>
+                        <div class="soc-text-center">
+                            <span class="soc-value" id="soc-value">--</span>
+                            <span class="soc-unit">%</span>
+                        </div>
+                    </div>
+                    <div class="soc-capacity" id="soc-capacity">-- / -- Ah</div>
+                    <div class="soc-subtext" id="soc-subtext">Akış Durumu: --</div>
+                </div>
+                
+                <!-- Pack metrics (V, A, W) -->
+                <div class="dashboard-card metrics-card">
+                    <h3>Güç Özeti</h3>
+                    <div class="metric-row">
+                        <div class="metric-item">
+                            <span class="metric-label">Gerilim</span>
+                            <span class="metric-value value-voltage" id="metric-voltage">-- V</span>
+                        </div>
+                        <div class="metric-item">
+                            <span class="metric-label">Akım</span>
+                            <span class="metric-value" id="metric-current">-- A</span>
+                        </div>
+                    </div>
+                    <div class="metric-divider"></div>
+                    <div class="metric-row">
+                        <div class="metric-item">
+                            <span class="metric-label">Güç</span>
+                            <span class="metric-value value-power" id="metric-power">-- W</span>
+                        </div>
+                        <div class="metric-item">
+                            <span class="metric-label">Döngü (Cycles)</span>
+                            <span class="metric-value" id="metric-cycles">--</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Cell stats (min, max, delta) -->
+                <div class="dashboard-card stats-card">
+                    <h3>Hücre Analizi</h3>
+                    <div class="stat-list">
+                        <div class="stat-list-item">
+                            <span class="stat-label">Ortalama Hücre</span>
+                            <span class="stat-val" id="stat-avg-cell">-- V</span>
+                        </div>
+                        <div class="stat-list-item">
+                            <span class="stat-label">En Yüksek</span>
+                            <span class="stat-val text-max-cell" id="stat-max-cell">-- V (#--)</span>
+                        </div>
+                        <div class="stat-list-item">
+                            <span class="stat-label">En Düşük</span>
+                            <span class="stat-val text-min-cell" id="stat-min-cell">-- V (#--)</span>
+                        </div>
+                        <div class="stat-list-item highlight">
+                            <span class="stat-label">Hücre Delta</span>
+                            <span class="stat-val value-delta" id="stat-delta-cell">-- mV</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Temperatures card -->
+                <div class="dashboard-card temp-card">
+                    <h3>Sıcaklıklar</h3>
+                    <div class="temp-item">
+                        <div class="temp-header">
+                            <span>Sıcaklık Probu 1</span>
+                            <span class="temp-value" id="temp-p1">-- °C</span>
+                        </div>
+                        <div class="progress-bar-container">
+                            <div class="progress-bar" id="temp-p1-bar" style="width: 0%"></div>
+                        </div>
+                    </div>
+                    <div class="temp-item">
+                        <div class="temp-header">
+                            <span>Sıcaklık Probu 2</span>
+                            <span class="temp-value" id="temp-p2">-- °C</span>
+                        </div>
+                        <div class="progress-bar-container">
+                            <div class="progress-bar" id="temp-p2-bar" style="width: 0%"></div>
+                        </div>
+                    </div>
+                    <div class="temp-item">
+                        <div class="temp-header">
+                            <span>MOSFET Sıcaklığı</span>
+                            <span class="temp-value" id="temp-mos">-- °C</span>
+                        </div>
+                        <div class="progress-bar-container">
+                            <div class="progress-bar" id="temp-mos-bar" style="width: 0%"></div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+            
+            <!-- POWER SWITCHES & CONTROLS -->
+            <section class="controls-section">
+                <div class="dashboard-card controls-card">
+                    <h3>BMS Switch Kontrolleri</h3>
+                    <div class="switches-grid">
+                        <div class="switch-container">
+                            <div class="switch-info">
+                                <h4>Şarj MOSFET</h4>
+                                <p>Hücrelerin şarj edilmesini yönetir</p>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="switch-charge" onchange="confirmSwitchToggle('charge', this)">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                        
+                        <div class="switch-container">
+                            <div class="switch-info">
+                                <h4>Deşarj MOSFET</h4>
+                                <p>Bataryanın çıkış enerjisini yönetir</p>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="switch-discharge" onchange="confirmSwitchToggle('discharge', this)">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                        
+                        <div class="switch-container">
+                            <div class="switch-info">
+                                <h4>Aktif Dengeleme</h4>
+                                <p>Dengeleyici devresini yönetir</p>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="switch-balance" onchange="confirmSwitchToggle('balance', this)">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </section>
+            
+            <!-- INDIVIDUAL CELL MONITOR (BAR CHART & DETAILED METRICS) -->
+            <section class="cell-monitor-section">
+                <div class="dashboard-card cell-card-large">
+                    <div class="cell-card-header">
+                        <h3>Hücre Voltaj Monitörü (Dinamik Zoom)</h3>
+                        <div class="zoom-legend">
+                            <span class="legend-item"><span class="legend-dot max-dot"></span>Max</span>
+                            <span class="legend-item"><span class="legend-dot min-dot"></span>Min</span>
+                            <span class="legend-item"><span class="legend-dot balance-dot"></span>Deng.</span>
+                        </div>
+                    </div>
+                    
+                    <div class="cell-chart-wrapper">
+                        <div class="cell-chart-y-axis">
+                            <span id="y-axis-max">3.60V</span>
+                            <span id="y-axis-mid">3.20V</span>
+                            <span id="y-axis-min">2.80V</span>
+                        </div>
+                        <div class="cell-chart-bars" id="cell-bars-container"></div>
+                    </div>
+                    
+                    <div class="cell-grid-details" id="cell-details-grid"></div>
+                </div>
+            </section>
+            
+            <!-- LIVE TREND GRAPH -->
+            <section class="chart-section">
+                <div class="dashboard-card chart-card-large">
+                    <h3>Zaman Serisi Güç Grafiği</h3>
+                    <div class="chart-container">
+                        <canvas id="liveTrendChart"></canvas>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+    
+    <!-- CONFIRMATION MODAL -->
+    <div id="confirm-modal" class="modal-overlay hidden">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3>⚠️ İşlem Onayı</h3>
+            </div>
+            <div class="modal-body">
+                <p id="confirm-modal-text">Bu anahtarı değiştirmek batarya çıkış gücünü kesebilir. Devam etmek istiyor musunuz?</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline" onclick="closeConfirmModal(false)">Vazgeç</button>
+                <button class="btn btn-danger" onclick="closeConfirmModal(true)">Evet, Onayla</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Custom Script -->
+    <script src="app.js"></script>
+</body>
+</html>

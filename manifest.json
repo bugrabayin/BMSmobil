@@ -1,0 +1,21 @@
+{
+  "short_name": "JKBMS Pro",
+  "name": "JKBMS Advanced Dashboard Mobile",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ],
+  "start_url": "./index.html",
+  "background_color": "#0a0d14",
+  "theme_color": "#00e5ff",
+  "display": "standalone",
+  "orientation": "portrait"
+}
