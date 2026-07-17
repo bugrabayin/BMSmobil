@@ -36,12 +36,13 @@ let simulationInterval = null;
 
 // Chart.js context
 let liveChart;
+let currentChartType = 'general'; // 'general', 'cells', 'power'
 let chartDataPoints = {
     labels: [],
     voltage: [],
     current: [],
-    maxCell: [],
-    minCell: []
+    power: [],
+    cells: [] // Array of arrays: cells[i] stores history for Cell i+1
 };
 
 // JKBMS register length dictionary for Javascript decoder
@@ -79,7 +80,7 @@ document.addEventListener("DOMContentLoaded", () => {
     initChart();
     
     // Log application version
-    appendLogConsole("JKBMS Pro Mobil v13 başlatıldı.", "INFO");
+    appendLogConsole("JKBMS Pro Mobil v14 başlatıldı.", "INFO");
     
     // Auto start in Simulation Mode
     activateSimulation();
@@ -970,9 +971,11 @@ function activateSimulation() {
     chartDataPoints.labels = [];
     chartDataPoints.voltage = [];
     chartDataPoints.current = [];
-    chartDataPoints.maxCell = [];
-    chartDataPoints.minCell = [];
-    liveChart.update();
+    chartDataPoints.power = [];
+    chartDataPoints.cells = [];
+    if (liveChart) {
+        rebuildChartDatasets();
+    }
     
     simulationInterval = setInterval(() => {
         // Calculate current
@@ -1230,28 +1233,7 @@ function initChart() {
         type: 'line',
         data: {
             labels: chartDataPoints.labels,
-            datasets: [
-                {
-                    label: 'Voltaj (V)',
-                    yAxisID: 'y-voltage',
-                    data: chartDataPoints.voltage,
-                    borderColor: '#ffea00',
-                    borderWidth: 2,
-                    pointRadius: 0,
-                    fill: false,
-                    tension: 0.2
-                },
-                {
-                    label: 'Akım (A)',
-                    yAxisID: 'y-current',
-                    data: chartDataPoints.current,
-                    borderColor: '#00e5ff',
-                    borderWidth: 2,
-                    pointRadius: 0,
-                    fill: false,
-                    tension: 0.2
-                }
-            ]
+            datasets: []
         },
         options: {
             responsive: true,
@@ -1263,28 +1245,150 @@ function initChart() {
                     labels: { color: '#7e8b9b', font: { size: 9, family: 'Inter' } }
                 }
             },
-            scales: {
-                x: {
-                    grid: { color: 'rgba(255, 255, 255, 0.02)' },
-                    ticks: { color: '#7e8b9b', font: { size: 8 } }
-                },
-                'y-voltage': {
-                    type: 'linear',
-                    display: true,
-                    position: 'left',
-                    grid: { color: 'rgba(255, 255, 255, 0.04)' },
-                    ticks: { color: '#ffea00', font: { size: 8 } }
-                },
-                'y-current': {
-                    type: 'linear',
-                    display: true,
-                    position: 'right',
-                    grid: { drawOnChartArea: false },
-                    ticks: { color: '#00e5ff', font: { size: 8 } }
-                }
-            }
+            scales: {}
         }
     });
+    
+    rebuildChartDatasets();
+}
+
+function rebuildChartDatasets() {
+    if (!liveChart) return;
+    
+    if (currentChartType === 'general') {
+        liveChart.data.datasets = [
+            {
+                label: 'Voltaj (V)',
+                yAxisID: 'y-voltage',
+                data: chartDataPoints.voltage,
+                borderColor: '#ffea00',
+                borderWidth: 2,
+                pointRadius: 0,
+                fill: false,
+                tension: 0.15
+            },
+            {
+                label: 'Akım (A)',
+                yAxisID: 'y-current',
+                data: chartDataPoints.current,
+                borderColor: '#00e5ff',
+                borderWidth: 2,
+                pointRadius: 0,
+                fill: false,
+                tension: 0.15
+            }
+        ];
+        
+        liveChart.options.scales = {
+            x: {
+                grid: { color: 'rgba(255, 255, 255, 0.02)' },
+                ticks: { color: '#7e8b9b', font: { size: 8 } }
+            },
+            'y-voltage': {
+                type: 'linear',
+                display: true,
+                position: 'left',
+                grid: { color: 'rgba(255, 255, 255, 0.04)' },
+                ticks: { color: '#ffea00', font: { size: 8 } },
+                title: { display: true, text: 'Gerilim (V)', color: '#ffea00', font: { size: 9 } }
+            },
+            'y-current': {
+                type: 'linear',
+                display: true,
+                position: 'right',
+                grid: { drawOnChartArea: false },
+                ticks: { color: '#00e5ff', font: { size: 8 } },
+                title: { display: true, text: 'Akım (A)', color: '#00e5ff', font: { size: 9 } }
+            }
+        };
+    } else if (currentChartType === 'power') {
+        liveChart.data.datasets = [
+            {
+                label: 'Güç (W)',
+                data: chartDataPoints.power,
+                borderColor: '#00ff88',
+                backgroundColor: 'rgba(0, 255, 136, 0.05)',
+                borderWidth: 2.5,
+                pointRadius: 0,
+                fill: true,
+                tension: 0.15
+            }
+        ];
+        
+        liveChart.options.scales = {
+            x: {
+                grid: { color: 'rgba(255, 255, 255, 0.02)' },
+                ticks: { color: '#7e8b9b', font: { size: 8 } }
+            },
+            y: {
+                type: 'linear',
+                display: true,
+                position: 'left',
+                grid: { color: 'rgba(255, 255, 255, 0.04)' },
+                ticks: { color: '#00ff88', font: { size: 8 } },
+                title: { display: true, text: 'Güç (W)', color: '#00ff88', font: { size: 9 } }
+            }
+        };
+    } else if (currentChartType === 'cells') {
+        const numCells = chartDataPoints.cells.length;
+        const cellDatasets = [];
+        
+        for (let i = 0; i < numCells; i++) {
+            cellDatasets.push({
+                label: `Hücre ${i + 1}`,
+                data: chartDataPoints.cells[i],
+                borderColor: `hsl(${(i * 360 / Math.max(1, numCells)) % 360}, 75%, 60%)`,
+                borderWidth: 1.5,
+                pointRadius: 0,
+                fill: false,
+                tension: 0.1
+            });
+        }
+        
+        liveChart.data.datasets = cellDatasets;
+        liveChart.options.scales = {
+            x: {
+                grid: { color: 'rgba(255, 255, 255, 0.02)' },
+                ticks: { color: '#7e8b9b', font: { size: 8 } }
+            },
+            y: {
+                type: 'linear',
+                display: true,
+                position: 'left',
+                grid: { color: 'rgba(255, 255, 255, 0.04)' },
+                ticks: { color: '#7e8b9b', font: { size: 8 } },
+                title: { display: true, text: 'Hücre Voltajı (V)', color: '#7e8b9b', font: { size: 9 } },
+                suggestedMin: 2.8,
+                suggestedMax: 3.6
+            }
+        };
+    }
+    
+    liveChart.update();
+}
+
+function setChartType(type) {
+    currentChartType = type;
+    
+    // Toggle active styles on custom header button classes
+    const buttons = document.querySelectorAll(".chart-toggle-buttons .tab-btn");
+    buttons.forEach(btn => {
+        btn.classList.remove("active");
+        btn.style.border = "1px solid transparent";
+        btn.style.background = "transparent";
+        btn.style.color = "#7e8b9b";
+    });
+    
+    const activeBtnId = `btn-chart-${type}`;
+    const activeBtn = document.getElementById(activeBtnId);
+    if (activeBtn) {
+        activeBtn.classList.add("active");
+        activeBtn.style.border = "1px solid rgba(0, 229, 255, 0.2)";
+        activeBtn.style.background = "rgba(0, 229, 255, 0.05)";
+        activeBtn.style.color = "#00e5ff";
+    }
+    
+    rebuildChartDatasets();
 }
 
 function updateTrendChart(data) {
@@ -1293,14 +1397,40 @@ function updateTrendChart(data) {
     chartDataPoints.labels.push(timestamp);
     chartDataPoints.voltage.push(data.total_voltage);
     chartDataPoints.current.push(data.current);
+    chartDataPoints.power.push(data.total_voltage * data.current);
     
-    if (chartDataPoints.labels.length > 40) {
+    if (data.cell_voltages && data.cell_voltages.length > 0) {
+        const numCells = data.cell_voltages.length;
+        if (chartDataPoints.cells.length !== numCells) {
+            chartDataPoints.cells = Array.from({ length: numCells }, () => []);
+        }
+        for (let i = 0; i < numCells; i++) {
+            chartDataPoints.cells[i].push(data.cell_voltages[i]);
+        }
+    }
+    
+    // Maintain a large historical rolling buffer (3000 data points, about 3 hours of records)
+    const MAX_POINTS = 3000;
+    if (chartDataPoints.labels.length > MAX_POINTS) {
         chartDataPoints.labels.shift();
         chartDataPoints.voltage.shift();
         chartDataPoints.current.shift();
+        chartDataPoints.power.shift();
+        
+        if (chartDataPoints.cells && chartDataPoints.cells.length > 0) {
+            for (let i = 0; i < chartDataPoints.cells.length; i++) {
+                chartDataPoints.cells[i].shift();
+            }
+        }
     }
     
-    liveChart.update('none');
+    if (liveChart) {
+        if (currentChartType === 'cells' && liveChart.data.datasets.length !== chartDataPoints.cells.length) {
+            rebuildChartDatasets();
+        } else {
+            liveChart.update('none');
+        }
+    }
 }
 
 // ==========================================
