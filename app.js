@@ -79,7 +79,7 @@ document.addEventListener("DOMContentLoaded", () => {
     initChart();
     
     // Log application version
-    appendLogConsole("JKBMS Pro Mobil v11 başlatıldı.", "INFO");
+    appendLogConsole("JKBMS Pro Mobil v12 başlatıldı.", "INFO");
     
     // Auto start in Simulation Mode
     activateSimulation();
@@ -191,26 +191,37 @@ async function connectWebBluetooth() {
         // Stop mock engine if running
         stopSimulation();
         
-        // Send initial status query command
-        const query_cmd = new Uint8Array([
-            0x4e, 0x57, 0x00, 0x13, 0x00, 0x00, 0x00, 0x00, 
-            0x06, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
-            0x68, 0x00, 0x00, 0x01, 0x29
-        ]);
-        await writeWebBleCharacteristic(query_cmd);
-        appendLogConsole("BMS Durum sorgusu gönderildi.", "INFO");
+        // Send initial status query commands
+        appendLogConsole("BLE el sıkışması başlatılıyor (0x97)...", "INFO");
+        const cmd_97 = buildBleCommand(0x97, 0);
+        await writeWebBleCharacteristic(cmd_97);
         
-        // Setup polling interval every 2.5 seconds to query data
+        // Wait 350ms, then send 0x96 Cell Info command
+        setTimeout(async () => {
+            if (webBleDevice && webBleDevice.gatt && webBleDevice.gatt.connected) {
+                try {
+                    appendLogConsole("BLE hücre verisi sorgulanıyor (0x96)...", "INFO");
+                    const cmd_96 = buildBleCommand(0x96, 1);
+                    await writeWebBleCharacteristic(cmd_96);
+                } catch (e) {
+                    appendLogConsole("Hata: 0x96 gönderilemedi: " + e.message, "ERROR");
+                }
+            }
+        }, 350);
+        
+        // Setup polling interval every 4 seconds to keep-alive and query cell status
+        let bleCounter = 2;
         if (webBlePollInterval) clearInterval(webBlePollInterval);
         webBlePollInterval = setInterval(async () => {
             if (webBleDevice && webBleDevice.gatt && webBleDevice.gatt.connected) {
                 try {
-                    await writeWebBleCharacteristic(query_cmd);
+                    const cmd_96 = buildBleCommand(0x96, bleCounter++);
+                    await writeWebBleCharacteristic(cmd_96);
                 } catch (e) {
                     appendLogConsole("Sorgu gönderme hatası: " + e.message, "ERROR");
                 }
             }
-        }, 2500);
+        }, 4000);
         
         // Listen for disconnect event
         webBleDevice.addEventListener('gattserverdisconnected', onWebBleDisconnected);
@@ -261,13 +272,18 @@ function handleWebBleNotification(event) {
     let frames = assembleJSFrames();
     for (let frame of frames) {
         try {
-            const telemetry = decodeJSFrame(frame);
+            let telemetry = null;
+            if (frame.isBle) {
+                telemetry = decodeBleFrame(frame);
+            } else {
+                telemetry = decodeJSFrame(frame);
+            }
             if (telemetry) {
                 telemetry.timestamp = Date.now() / 1000;
                 handleTelemetryUpdate(telemetry);
             }
         } catch (e) {
-            console.error("Error decoding JS Frame:", e);
+            console.error("Error decoding Frame:", e);
         }
     }
 }
@@ -276,20 +292,42 @@ function assembleJSFrames() {
     let frames = [];
     
     while (true) {
-        // Find 0x4E 0x57 start signature
+        if (bleReceiveBuffer.length === 0) break;
+        
+        // Find header signature: either 4E 57 (UART) or 55 AA EB 90 (BLE)
         let startIdx = -1;
+        let isBleFrame = false;
+        
         for (let i = 0; i < bleReceiveBuffer.length - 1; i++) {
-            if (bleReceiveBuffer[i] === 0x4E && bleReceiveBuffer[i+1] === 0x57) {
+            // Check UART signature
+            if (bleReceiveBuffer[i] === 0x4e && bleReceiveBuffer[i+1] === 0x57) {
                 startIdx = i;
+                isBleFrame = false;
+                break;
+            }
+            // Check BLE signature
+            if (i < bleReceiveBuffer.length - 3 && 
+                bleReceiveBuffer[i] === 0x55 && 
+                bleReceiveBuffer[i+1] === 0xAA && 
+                bleReceiveBuffer[i+2] === 0xEB && 
+                bleReceiveBuffer[i+3] === 0x90) {
+                startIdx = i;
+                isBleFrame = true;
                 break;
             }
         }
         
         if (startIdx === -1) {
-            // Check for trailing partial match
-            if (bleReceiveBuffer.length > 0 && bleReceiveBuffer[bleReceiveBuffer.length - 1] === 0x4E) {
-                bleReceiveBuffer = bleReceiveBuffer.slice(bleReceiveBuffer.length - 1);
-            } else {
+            // No signature found, check if last bytes could be start of signature
+            let foundPartial = false;
+            for (let i = Math.max(0, bleReceiveBuffer.length - 3); i < bleReceiveBuffer.length; i++) {
+                if (bleReceiveBuffer[i] === 0x4e || bleReceiveBuffer[i] === 0x55) {
+                    bleReceiveBuffer = bleReceiveBuffer.slice(i);
+                    foundPartial = true;
+                    break;
+                }
+            }
+            if (!foundPartial) {
                 bleReceiveBuffer = new Uint8Array(0);
             }
             break;
@@ -300,30 +338,55 @@ function assembleJSFrames() {
             bleReceiveBuffer = bleReceiveBuffer.slice(startIdx);
         }
         
-        if (bleReceiveBuffer.length < 4) {
-            // Need at least 4 bytes to check payload length
-            break;
-        }
-        
-        // Payload len is at bytes 2,3 (big endian)
-        const payloadLen = (bleReceiveBuffer[2] << 8) | bleReceiveBuffer[3];
-        const totalFrameLen = payloadLen + 4;
-        
-        if (bleReceiveBuffer.length < totalFrameLen) {
-            // Frame is incomplete, wait for more chunks
-            break;
-        }
-        
-        // Extract complete frame
-        const frame = bleReceiveBuffer.slice(0, totalFrameLen);
-        bleReceiveBuffer = bleReceiveBuffer.slice(totalFrameLen);
-        
-        // Verify Checksum
-        if (verifyJSChecksum(frame)) {
-            frames.push(frame);
+        if (isBleFrame) {
+            // BLE frame is fixed 300 bytes
+            const totalFrameLen = 300;
+            if (bleReceiveBuffer.length < totalFrameLen) {
+                // Incomplete BLE frame, wait for more chunks
+                break;
+            }
+            // Extract complete frame
+            const frame = bleReceiveBuffer.slice(0, totalFrameLen);
+            bleReceiveBuffer = bleReceiveBuffer.slice(totalFrameLen);
+            
+            // Verify BLE Checksum (sum of bytes 0-298)
+            let sum = 0;
+            for (let i = 0; i < 299; i++) {
+                sum += frame[i];
+            }
+            const computedCrc = sum & 0xFF;
+            const remoteCrc = frame[299];
+            
+            if (computedCrc === remoteCrc) {
+                frame.isBle = true;
+                frames.push(frame);
+            } else {
+                console.warn(`BLE Checksum invalid: computed 0x${computedCrc.toString(16)} != remote 0x${remoteCrc.toString(16)}`);
+                // Discard invalid header bytes to continue searching
+                bleReceiveBuffer = bleReceiveBuffer.slice(4);
+            }
         } else {
-            console.warn("JS Checksum invalid, discarding frame.");
-            appendLogConsole("Hata: Gelen paket bütünlüğü (checksum) doğrulanmadı.", "WARNING");
+            // UART frame (variable length)
+            if (bleReceiveBuffer.length < 4) {
+                break;
+            }
+            // Payload len is at bytes 2,3 (big endian)
+            const payloadLen = (bleReceiveBuffer[2] << 8) | bleReceiveBuffer[3];
+            const totalFrameLen = payloadLen + 4;
+            
+            if (bleReceiveBuffer.length < totalFrameLen) {
+                break;
+            }
+            const frame = bleReceiveBuffer.slice(0, totalFrameLen);
+            bleReceiveBuffer = bleReceiveBuffer.slice(totalFrameLen);
+            
+            if (verifyJSChecksum(frame)) {
+                frame.isBle = false;
+                frames.push(frame);
+            } else {
+                console.warn("UART Checksum invalid, discarding frame.");
+                bleReceiveBuffer = bleReceiveBuffer.slice(2);
+            }
         }
     }
     
@@ -332,17 +395,112 @@ function assembleJSFrames() {
 
 function verifyJSChecksum(frame) {
     if (frame.length < 10) return false;
-    // Expected checksum is last 4 bytes of frame (big endian unsigned int)
     const len = frame.length;
     const expected = ((frame[len-4] << 24) | (frame[len-3] << 16) | (frame[len-2] << 8) | frame[len-1]) >>> 0;
     
-    // Sum of all bytes excluding checksum
     let sum = 0;
     for (let i = 0; i < len - 4; i++) {
         sum += frame[i];
     }
     const calculated = sum & 0xFFFFFFFF;
     return expected === calculated;
+}
+
+function getUint16LE(buf, offset) {
+    return (buf[offset + 1] << 8) | buf[offset];
+}
+
+function getInt16LE(buf, offset) {
+    const val = (buf[offset + 1] << 8) | buf[offset];
+    return (val & 0x8000) ? (val - 0x10000) : val;
+}
+
+function getUint32LE(buf, offset) {
+    return ((buf[offset + 3] << 24) | (buf[offset + 2] << 16) | (buf[offset + 1] << 8) | buf[offset]) >>> 0;
+}
+
+function getInt32LE(buf, offset) {
+    const val = (buf[offset + 3] << 24) | (buf[offset + 2] << 16) | (buf[offset + 1] << 8) | buf[offset];
+    return val;
+}
+
+function buildBleCommand(cmdByte, counter) {
+    const frame = new Uint8Array(20);
+    frame[0] = 0xAA;
+    frame[1] = 0x55;
+    frame[2] = 0x90;
+    frame[3] = 0xEB;
+    frame[4] = cmdByte;
+    frame[5] = 0x00;
+    // 6 to 15 remain 0x00
+    frame[16] = counter & 0xFF;
+    // 17 to 18 remain 0x00
+    
+    let sum = 0;
+    for (let i = 0; i < 19; i++) {
+        sum += frame[i];
+    }
+    frame[19] = sum & 0xFF;
+    return frame;
+}
+
+function decodeBleFrame(frame) {
+    const frame_type = frame[4];
+    if (frame_type !== 0x02) {
+        return null;
+    }
+    
+    let cell_voltages = [];
+    for (let i = 0; i < 24; i++) {
+        let volt_mv = getUint16LE(frame, i * 2 + 6);
+        let volt = volt_mv * 0.001;
+        if (volt > 0.5 && volt < 5.0) {
+            cell_voltages.push(volt);
+        }
+    }
+    
+    let total_voltage = getUint32LE(frame, 118) * 0.001;
+    let current = getInt32LE(frame, 126) * 0.001;
+    let temp1 = getInt16LE(frame, 130) * 0.1;
+    let temp2 = getInt16LE(frame, 132) * 0.1;
+    let mos_temp = getInt16LE(frame, 134) * 0.1;
+    let balancing_current = getInt16LE(frame, 138) * 0.001;
+    let balancing_active = (frame[140] !== 0x00);
+    let soc = frame[141];
+    let capacity_remaining = getUint32LE(frame, 142) * 0.001;
+    let full_charge_capacity = getUint32LE(frame, 146) * 0.001;
+    let cycle_count = getUint32LE(frame, 150);
+    
+    let charging_switch = (frame[166] === 0x01);
+    let discharging_switch = (frame[167] === 0x01);
+    let balancing_switch = (frame[169] === 0x01);
+    
+    let error_bitmask = getUint16LE(frame, 136);
+    let alerts = parseJSAlarms(error_bitmask);
+    
+    return {
+        bms_id: "JK_BLE",
+        cmd_type: 0x02,
+        cell_voltages: cell_voltages,
+        cell_count: cell_voltages.length,
+        total_voltage: total_voltage,
+        current: current,
+        temperatures: {
+            probe_1: temp1,
+            probe_2: temp2,
+            mos: mos_temp
+        },
+        balancing_current: balancing_current,
+        balancing_active: balancing_active,
+        soc: soc,
+        capacity_remaining: capacity_remaining,
+        capacity_nominal: full_charge_capacity,
+        cycle_count: cycle_count,
+        charging_switch: charging_switch,
+        discharging_switch: discharging_switch,
+        balancing_switch: balancing_switch,
+        alerts: alerts
+    };
 }
 
 function decodeJSFrame(frame) {
