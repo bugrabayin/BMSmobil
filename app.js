@@ -1477,3 +1477,43 @@ function clearConsole() {
     const consoleBody = document.getElementById("console-logs");
     if (consoleBody) consoleBody.innerHTML = "";
 }
+
+// ==========================================
+// PWA DİNAMİK YÜKLEME PROMPTU YÖNETİMİ
+// ==========================================
+let deferredPrompt;
+const installContainer = document.getElementById('pwa-install-container');
+const installBtn = document.getElementById('btn-pwa-install');
+
+window.addEventListener('beforeinstallprompt', (e) => {
+    // Tarayıcının varsayılan yükleme ekranını engelle
+    e.preventDefault();
+    // Olayı sakla
+    deferredPrompt = e;
+    // Yükle butonunu göster
+    if (installContainer) {
+        installContainer.classList.remove('hidden');
+        appendLogConsole("PWA yükleme seçeneği aktif. Cihaza kurulabilir.", "INFO");
+    }
+});
+
+if (installBtn) {
+    installBtn.addEventListener('click', async () => {
+        if (!deferredPrompt) return;
+        // Yükleme istemini göster
+        deferredPrompt.prompt();
+        // Kullanıcının kararını bekle
+        const { outcome } = await deferredPrompt.userChoice;
+        appendLogConsole(`Kullanıcı yükleme kararı: ${outcome}`, "INFO");
+        // İstemi temizle (tek kullanımlıktır)
+        deferredPrompt = null;
+        // Butonu gizle
+        if (installContainer) installContainer.classList.add('hidden');
+    });
+}
+
+// Uygulama başarıyla yüklendiğinde tetiklenir
+window.addEventListener('appinstalled', () => {
+    appendLogConsole("Uygulama başarıyla cihazınıza yüklendi!", "INFO");
+    if (installContainer) installContainer.classList.add('hidden');
+});
