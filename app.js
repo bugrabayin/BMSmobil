@@ -769,6 +769,59 @@ function connectToGatewayServer() {
 function handleTelemetryUpdate(data) {
     telemetryData = data;
     
+    // Fallback values for basic parameters
+    data.soc = data.soc || 0;
+    data.capacity_remaining = data.capacity_remaining || 0;
+    data.capacity_nominal = data.capacity_nominal || 0;
+    data.total_voltage = data.total_voltage || 0;
+    data.current = data.current || 0;
+    data.cycle_count = data.cycle_count || 0;
+    data.cell_count = data.cell_count || 16;
+    data.alerts = data.alerts || [];
+    
+    // Derive missing statistics to prevent UI crashes (especially for BLE frames)
+    if (data.cell_voltages && data.cell_voltages.length > 0) {
+        const cvs = data.cell_voltages;
+        if (data.max_cell_voltage === undefined) {
+            data.max_cell_voltage = Math.max(...cvs);
+        }
+        if (data.min_cell_voltage === undefined) {
+            data.min_cell_voltage = Math.min(...cvs);
+        }
+        if (data.max_cell_index === undefined) {
+            data.max_cell_index = cvs.indexOf(data.max_cell_voltage) + 1;
+        }
+        if (data.min_cell_index === undefined) {
+            data.min_cell_index = cvs.indexOf(data.min_cell_voltage) + 1;
+        }
+        if (data.cell_delta === undefined) {
+            data.cell_delta = data.max_cell_voltage - data.min_cell_voltage;
+        }
+        if (data.average_cell_voltage === undefined) {
+            data.average_cell_voltage = cvs.reduce((a, b) => a + b, 0) / cvs.length;
+        }
+    } else {
+        data.cell_voltages = [];
+        data.max_cell_voltage = 0;
+        data.min_cell_voltage = 0;
+        data.max_cell_index = 0;
+        data.min_cell_index = 0;
+        data.cell_delta = 0;
+        data.average_cell_voltage = 0;
+    }
+    
+    if (data.power === undefined) {
+        data.power = data.total_voltage * data.current;
+    }
+    
+    if (!data.temperatures) {
+        data.temperatures = { probe_1: 0, probe_2: 0, mos: 0 };
+    } else {
+        data.temperatures.probe_1 = data.temperatures.probe_1 || 0;
+        data.temperatures.probe_2 = data.temperatures.probe_2 || 0;
+        data.temperatures.mos = data.temperatures.mos || 0;
+    }
+    
     // 1. Update headers
     document.getElementById("bms-model").textContent = data.model_name || "JKBMS BLE";
     document.getElementById("bms-meta").textContent = `Cihaz ID: ${data.bms_id || '--'} | Hücre Sayısı: ${data.cell_count}S`;
