@@ -1228,35 +1228,23 @@ function renderCellVoltageBars(data) {
 // LIVE CHART CONTROLLER (CHART.JS)
 // ==========================================
 function initChart() {
-    const ctx = document.getElementById('liveTrendChart').getContext('2d');
-    liveChart = new Chart(ctx, {
-        type: 'line',
-        data: {
-            labels: chartDataPoints.labels,
-            datasets: []
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            interaction: { mode: 'index', intersect: false },
-            plugins: {
-                legend: {
-                    position: 'top',
-                    labels: { color: '#7e8b9b', font: { size: 9, family: 'Inter' } }
-                }
-            },
-            scales: {}
-        }
-    });
-    
     rebuildChartDatasets();
 }
 
 function rebuildChartDatasets() {
-    if (!liveChart) return;
+    const canvas = document.getElementById('liveTrendChart');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    
+    if (liveChart) {
+        liveChart.destroy();
+    }
+    
+    let datasets = [];
+    let scales = {};
     
     if (currentChartType === 'general') {
-        liveChart.data.datasets = [
+        datasets = [
             {
                 label: 'Voltaj (V)',
                 yAxisID: 'y-voltage',
@@ -1279,7 +1267,7 @@ function rebuildChartDatasets() {
             }
         ];
         
-        liveChart.options.scales = {
+        scales = {
             x: {
                 grid: { color: 'rgba(255, 255, 255, 0.02)' },
                 ticks: { color: '#7e8b9b', font: { size: 8 } }
@@ -1302,7 +1290,7 @@ function rebuildChartDatasets() {
             }
         };
     } else if (currentChartType === 'power') {
-        liveChart.data.datasets = [
+        datasets = [
             {
                 label: 'Güç (W)',
                 data: chartDataPoints.power,
@@ -1315,7 +1303,7 @@ function rebuildChartDatasets() {
             }
         ];
         
-        liveChart.options.scales = {
+        scales = {
             x: {
                 grid: { color: 'rgba(255, 255, 255, 0.02)' },
                 ticks: { color: '#7e8b9b', font: { size: 8 } }
@@ -1331,10 +1319,8 @@ function rebuildChartDatasets() {
         };
     } else if (currentChartType === 'cells') {
         const numCells = chartDataPoints.cells.length;
-        const cellDatasets = [];
-        
         for (let i = 0; i < numCells; i++) {
-            cellDatasets.push({
+            datasets.push({
                 label: `Hücre ${i + 1}`,
                 data: chartDataPoints.cells[i],
                 borderColor: `hsl(${(i * 360 / Math.max(1, numCells)) % 360}, 75%, 60%)`,
@@ -1345,8 +1331,7 @@ function rebuildChartDatasets() {
             });
         }
         
-        liveChart.data.datasets = cellDatasets;
-        liveChart.options.scales = {
+        scales = {
             x: {
                 grid: { color: 'rgba(255, 255, 255, 0.02)' },
                 ticks: { color: '#7e8b9b', font: { size: 8 } }
@@ -1364,7 +1349,26 @@ function rebuildChartDatasets() {
         };
     }
     
-    liveChart.update();
+    liveChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: chartDataPoints.labels,
+            datasets: datasets
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: {
+                    position: 'top',
+                    labels: { color: '#7e8b9b', font: { size: 9, family: 'Inter' } }
+                }
+            },
+            scales: scales
+        }
+    });
 }
 
 function setChartType(type) {
@@ -1409,8 +1413,8 @@ function updateTrendChart(data) {
         }
     }
     
-    // Maintain a large historical rolling buffer (3000 data points, about 3 hours of records)
-    const MAX_POINTS = 3000;
+    // Keep max 150 points for high-performance rolling graph
+    const MAX_POINTS = 150;
     if (chartDataPoints.labels.length > MAX_POINTS) {
         chartDataPoints.labels.shift();
         chartDataPoints.voltage.shift();
@@ -1425,11 +1429,14 @@ function updateTrendChart(data) {
     }
     
     if (liveChart) {
+        // Rebuild chart when changing cell count or first rendering cells
         if (currentChartType === 'cells' && liveChart.data.datasets.length !== chartDataPoints.cells.length) {
             rebuildChartDatasets();
         } else {
-            liveChart.update('none');
+            liveChart.update();
         }
+    } else {
+        rebuildChartDatasets();
     }
 }
 
